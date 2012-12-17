@@ -1,0 +1,472 @@
+<!--
+  Copyright (c) 2007 Alessandro Warth <awarth@cs.ucla.edu>
+
+  Permission is hereby granted, free of charge, to any person
+  obtaining a copy of this software and associated documentation
+  files (the "Software"), to deal in the Software without
+  restriction, including without limitation the rights to use,
+  copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the
+  Software is furnished to do so, subject to the following
+  conditions:
+
+  The above copyright notice and this permission notice shall be
+  included in all copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+  OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+  HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+  WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+  OTHER DEALINGS IN THE SOFTWARE.
+!-->
+
+<html>
+  <head>
+    <title>A Multi-Stage OMeta/JS Compiler</title>
+    <script src="lib.js"></script>
+    <script src="ometa-base.js"></script>
+    <script src="parser.js"></script>
+    <script src="squeak-parser.js"></script>
+    <script src="squeak-lib.js"></script>
+    <script src="ometa-parser.js"></script>
+    <script>
+
+// *****************************************************************************
+// *** The code below was adapted from Takashi Yamamiya's Javascript Workspace,
+// *** http://metatoys.org/propella/js/workspace.js
+
+/* event handler for short cut key */
+function onShortCutKey(evt)
+{
+  evt = (evt) ? evt : window.event;
+  if (!evt) return;
+  var charCode = (evt.charCode) ? evt.charCode : evt.keyCode;
+  if (!(evt.altKey || evt.ctrlKey || evt.metaKey)) {
+    return true;
+  }
+  if (charCode == 68)
+    doIt();
+  else if (charCode == 80)
+    printIt();
+  else
+    return true
+  if (evt.preventDefault) {
+    evt.preventDefault()
+    evt.stopPropagation()
+  }
+  else {
+    evt.returnValue = false
+    evt.cancelBubble = true
+  }
+  return false;
+}
+
+function printIt() {
+  var result
+  try { result =  evalSelection() }
+  catch (e) { return }
+  var editor = result.source.editor;
+  var end = result.source.end;
+  var head = editor.value.substring(0, end);
+  var tail = editor.value.substring(end);
+  var oldScrollTop = editor.scrollTop
+  editor.value = head + result.result + tail;
+  editor.scrollTop = oldScrollTop
+  setCaretSelection(editor, end, head.length + result.result.length);
+}
+
+function doIt() {
+  var result
+  try { result = evalSelection() }
+  catch (e) { return }
+  result.source.editor.focus();
+}
+
+/* Get selection of textarea */
+function getCaretSelection(field) {
+    field.focus();
+    var result = {start: 0, end: 0};
+    // IE support based on http://groups.drupal.org/node/1210
+    if(typeof workspace.selectionEnd == "undefined") {
+        var range = document.selection.createRange();
+        var rangeCopy = range.duplicate();
+        rangeCopy.moveToElementText(field);
+        rangeCopy.setEndPoint( 'EndToEnd', range );
+        result.start = rangeCopy.text.length - range.text.length;
+        result.end = result.start + range.text.length;
+    } else {
+        result.start = field.selectionStart;
+        result.end = field.selectionEnd;
+    }
+    return result;
+}
+
+/* Set selection of textarea */
+function setCaretSelection(field, start, end) {
+    field.focus();
+    // IE
+    if(typeof workspace.selectionEnd == "undefined") {
+        var range = field.createTextRange()
+        range.expand("textedit");
+        var dStart = start - (field.value.substring(0, start).split("\n").length - 1);
+        var dEnd = end - field.value.length + field.value.substring(end + 1).split("\n").length - 1
+        range.moveStart("character", dStart)
+        range.moveEnd("character", dEnd)
+        range.select();
+    } else {
+        field.selectionStart = start;
+        field.selectionEnd = end;
+    }
+}
+
+/* Get expression from textarea */
+function getSource() {
+  var editor = workspace;
+  var selection = getCaretSelection(editor);
+  var start = selection.start;
+  var end = selection.end;
+  var text = editor.value.substring(start, end);
+  if (start == end) {
+    var alltext = editor.value;
+    var index = 0;
+    if (start > 0 && alltext.charAt(start) == "\n")
+      start--
+    while (start > 0 && alltext.charAt(start) != "\n")
+      start--
+    while (end < alltext.length && alltext.charAt(end) != "\r" && alltext.charAt(end) != "\n")
+      end++
+    if (end == alltext.length)
+      end--
+    text = alltext.substring(start, end);
+    setCaretSelection(editor, start, end);
+  }
+
+  var source = {
+    editor: editor,
+    start: start,
+    end: end,
+    text: text
+  };
+  return source;
+}
+
+function ParseError() { }
+
+function evalSelection() {
+  var source = getSource();
+  var result;
+  try {
+    try { form.translation.value = OMetaSqueakParser.translate(source.text) }
+    catch (e) {
+      if (e instanceof Fail) {
+        var failPos      = source.start + e.matcher.input.realPos() - 1,
+            errorMsg     = " Parse error ->",
+            oldScrollTop = form.source.scrollTop
+        form.source.value = form.source.value.substring(0, failPos) + errorMsg +
+                            form.source.value.substring(failPos, form.source.value.length)
+        form.source.scrollTop = oldScrollTop
+        setCaretSelection(form.source, failPos, failPos + errorMsg.length)
+        e = new ParseError()
+      }
+      throw e
+    }
+    result = eval(form.translation.value)
+  }
+  catch (e) {
+    if (!(e instanceof ParseError)) {
+      if (e instanceof Fail)
+        alert(e)
+      else
+        alert("uncaught exception: " + e)
+    }
+    throw e
+  }
+  result = [" ", printString(result)].squish().join('')
+  
+  resultObject = {
+    source: source,
+    result: result
+  };
+  return resultObject;
+}
+
+// *** End of JavaScript Workspace code.
+// *****************************************************************************
+
+
+/*
+JS SUCKS: can't make an object that pretends to be a function - they are not 1st class objects (implementations)
+ 
+  x = new Object()
+  x.apply = function($elf, args) { return args[0] + 1 }
+  x.call = function($elf, arg1) { return arg1 + 10 }
+  alert(x(5))
+
+  x = (function(arg1) { return arg1 + 1 }).delegated()
+  alert(x)
+  alert(x(100))
+*/
+
+Transcript = {
+  show:  function(x) {
+           form.transcript.value     = [form.transcript.value, x.asString()].join('')
+           form.transcript.scrollTop = form.transcript.scrollHeight
+           return null
+          },
+  cr:    function()  {
+           form.transcript.value     = [form.transcript.value, "\n"].join('')
+           form.transcript.scrollTop = form.transcript.scrollHeight
+           return null
+         },
+  clear: function()  {
+           form.transcript.value = ""
+           return null
+         }
+}
+
+Object.msleep = function(ms) {
+  var now      = new Date()
+      stopTime = new Date(now.getTime() + ms)
+  while (new Date() < stopTime)
+    ;
+  return null
+}
+
+eval(OMetaParser.matchAllwith(
+  "ometa OMetaSqueakParser : Parser {                                                                              \
+     topLevelExpr  ::= <foreign OMetaParser  #grammar>                                                             \
+                     | <foreign SqueakParser #expr>.                                                               \
+     topLevelExprs ::= <listOf #topLevelExpr '.'>:r (<token '.'> | <empty>) <spaces> <end> => [r delimWith: '; ']. \
+     iTranslate    ::= <topLevelExprs>:r                                                   => [r squish join: '']. \
+   }                                                                                                               ",
+  "grammar").squish().join(''))
+OMetaSqueakParser.translate = function(s) { return this.matchAllwith(s, "iTranslate") }
+OMetaSqueakParser.eval      = function(s) { return eval(this.translate(s)) }
+
+function autoexec() {
+  OMetaSqueakParser.eval(
+    "ometa MDefSqueakParser : SqueakParser {                                                       \
+       unaryMsgPat       ::= <identifier>:m                        => [{{$'. m. $'}. {}}].         \
+       binaryMsgPat      ::= <binary>:m  <identifier>:a            => [{m squish join: ''. {a}}].  \
+       keywordMsgPatPart ::= <keyword>:k <identifier>:a            => [{k. a}].                    \
+       keywordMsgPat     ::= <keywordMsgPatPart>+:parts                                            \
+                               ![parts collect: [:p | p at: 0]]:ks                                 \
+                               ![parts collect: [:p | p at: 1]]:as                                 \
+                               ![ks squish join: '']:ks            => [{{$'. ks escape. $'}. as}]. \
+       msgPat            ::= <keywordMsgPat>                                                       \
+                           | <binaryMsgPat>                                                        \
+                           | <unaryMsgPat>.                                                        \
+       methodDef         ::= <identifier>:cls <msgPat>:nameAndArgs <block false>:body              \
+                               => [cls,, '.prototype[',, (nameAndArgs at: 0),, '] = ',,            \
+                                   'function(',, ((nameAndArgs at: 1) delimWith: ', '),, ') { ',,  \
+                                     'var $elf = this; ',,                                         \
+                                     'try { (',, body,, ')() } ',,                                 \
+                                     'catch (_r) { ',,                                             \
+                                       'if (_r instanceof Return) return _r.value;',,              \
+                                       'else throw _r } return this }'].                           \
+     }.                                                                                            \
+     ometa NewSqueakParser {                                                                       \
+        expr     ::= <foreign MDefSqueakParser #methodDef>                                         \
+                   | <foreign MDefSqueakParser #expr>.                                             \
+        unit     ::= <foreign MDefSqueakParser #unit>.                                             \
+        tsString ::= <foreign MDefSqueakParser #unit>.                                             \
+     }.                                                                                            \
+     SqueakParser := NewSqueakParser.                                                              ")
+}
+
+function toggleVisible(id) {
+  var style = document.getElementById(id).style
+  if (style.display == "none") {
+    style.display = "block"
+    return "hide"
+  }
+  else {
+    style.display = "none"
+    return "show"
+  }
+}
+
+/*
+   JS SUCKS: Unfortunately, functions are not quite 1st class objects in "real" JS implementations.
+   This makes function proxies, like f below, not work:
+
+    f = (function(x) { return x + 1 }).delegated()
+    f.printString = function() { return "[:x | x + 1]" }
+*/
+
+    </script>
+  </head>
+  <body onLoad="form = document.getElementById('myForm'); workspace = form.source; workspace.onkeydown = onShortCutKey; autoexec()">
+    <table border=0><tr><td><h2><a href="index.html" style="text-decoration: none; color: black">A Multi-Stage OMeta/JS Compiler</a> in OMeta/JS</h2></td></tr></table>
+<!--
+    <b><u>Instructions</u>:</b> the text area below (<b>source</b>) works just like a Smalltalk workspace.
+    To evaluate some code, just select it and press the "do it" button.
+    "Print it" is like "do it", but it also prints the result by sending it the <tt>printString</tt> message.
+    <br><br>
+-->
+    This page "autoexecs" the example from the <a href="index.html">OMeta/JS demo page</a> that adds support for method declarations
+    to the <tt>SqueakParser</tt>, then defines a multi-stage OMeta/JS compiler.
+    To make it go, select all of the code below and press the "do it" button, then try the examples at the end of the page.
+    <br><br>
+    <form id=myForm>
+<!--
+      <b>Source</b><br>
+-->
+      <textarea cols=132 rows=40 name=source>
+" TODO: the OMeta/JS optimizer "
+
+ometa OMetaParser2 : Parser {
+  tsName           ::= <firstAndRest #letter #letterOrDigit>:xs                      => [xs squish join: ''].
+  name             ::= <spaces> <tsName>.
+  character        ::= <token '$'> <char>:x                                          => [x printString].
+  string           ::= (<token '#'> | <spaces>)
+                         <foreign self.SqueakParser #tsString>:xs                    => [xs squish join: '']
+                     | <token '#'> <tsName>.
+  number           ::= (<token '-'> | <spaces> => ['']):sign <digit>+:n              => [{sign. n} squish join: ''].
+  keyword :xs      ::= <token xs> ~<letterOrDigit>                                   => [xs].
+  hostPrimExpr     ::= <foreign self.SqueakParser #unit>:x                           => [x squish join: ''].
+  hostExprPart     ::= <foreign self.SqueakParser #expr>:x                           => [x squish join: ''].
+  hostExpr         ::= <listOf #hostExprPart '.'>:xs                                 => [xs at:  xs size - 1
+                                                                                            put: 'return ', (xs at: xs size - 1).
+                                                                                         '(function(){', (xs join: ';'), '})()'].
+  application      ::= <token '<'> <name>:rule <hostPrimExpr>*:args <token '>'>      => [{#App. rule}, args]. 
+  semAction        ::= <token '!['> <hostExpr>:x <token ']'>                         => [{#Act. x}]
+                     | <token '=>'> <token '['> <hostExpr>:x <token ']'>             => [{#Act. x}].
+  semPredicate     ::= <token '?['> <hostExpr>:x <token ']'>                         => [{#Pred. x}].
+  expr             ::= <listOf #expr4 '|'>:xs                                        => [{#Or}, xs].
+  expr4            ::= <expr3>*:xs                                                   => [{#And}, xs].
+  optIter :x       ::= <token '*'>                                                   => [{#Many.  x}]
+                     | <token '+'>                                                   => [{#Many1. x}]
+                     | <empty>                                                       => [x].
+  expr3            ::= <expr2>:x <optIter x>:x ( <token ':'> <name>:n                => [(self at: #locals) add:n.
+                                                                                         {#Set. n. x}]
+                                               | <empty>                             => [x]
+                                               )
+                     | <token ':'> <name>:n                                          => [(self at: #locals) add: n.
+                                                                                         {#Set. n. {#App. #anything}}].
+  expr2            ::= <token '~'> <expr2>:x                                         => [{#Not.       x}]
+                     | <token '&'> <expr1>:x                                         => [{#Lookahead. x}]
+                     | <expr1>.
+  expr1            ::= <application> | <semAction> | <semPredicate>
+                     | ( <keyword 'undefined'> | <keyword 'nil'>
+                       | <keyword 'true'> | <keyword 'false'>
+                       | <string> | <number> | <character>       ):x                 => [{#App. #exactly. x}]
+                     | <token '"'> (~'"' <char>)*:cs '"'                             => [{#App. #seq. cs}]
+                     | <token '{'> <expr>:x <token '}'>                              => [{#Form. x}]
+                     | <token '('> <expr>:x <token ')'>                              => [x].
+  rule             ::= &(<name>:n) ![self at: #locals put: {'$elf=this'}]
+                         <rulePart n>:x (<token ';'> <rulePart n>)*:xs <token '.'>   => [{#Rule. n. self.locals. {#Or. x}, xs}].
+  rulePart :rn     ::= <name>:n ?[n = rn] <expr4>:b1 ( <token '::='> <expr>:b2       => [{#And. b1. b2}]
+                                                     | <empty>                       => [b1]
+                                                     ).
+  grammar          ::= <keyword 'ometa'> <name>:n
+                         ( <token ':'> <name>
+                         | <empty> => ['OMeta'] ):sn
+                         <token '{'> <rule>*:rs <token '}'>                          => [{#Grammar. n. sn}, rs].
+}.
+OMetaParser2 at: #SqueakParser put: SqueakParser.
+
+
+" By dispatching on the head of a list, the following idiom allows
+  translators to avoid checking for different kinds of lists in order. "
+ometa Translator {
+  trans ::= {:x <apply x>:answer} => [answer].
+}.
+
+ometa OMetaCompiler2 : Translator {
+  App 'super' <anything>+:args            => [self.sName, '._superApplyWithArgs($elf,', (args join: ','), ')'];
+  App  :rule  <anything>+:args            => ['$elf._applyWithArgs("', rule, '", ', (args join: ', '), ')'];
+  App  :rule                              => ['$elf._apply("', rule, '")'].
+  Act  :expr                              => [expr].
+  Pred :expr                              => ['$elf._pred(', expr, ')'].
+  Or   <transFn>*:xs                      => ['$elf._or(', (xs join: ','), ')'].
+  And  <notLast #trans>*:xs <trans>:y     => [xs addLast: 'return ', y.
+                                              '(function(){', (xs join: ';'), '})()'];
+  And                                     => ['(function(){})'].
+  Many  <trans>:x                         => ['$elf._many(function(){return ', x, '})'].
+  Many1 <trans>:x                         => ['$elf._many1(function(){return ', x, '})'].
+  Set   :n <trans>:v                      => [n, '=', v].
+  Not   <trans>:x                         => ['$elf._not(function(){return ', x, '})'].
+  Lookahead <trans>:x                     => ['$elf._lookahead(function(){return ', x, '})'].
+  Form  <trans>:x                         => ['$elf._form(function(){return ', x, '})'].
+  Rule  :name <locals>:ls <trans>:body    => [self.gName, '.[''', name, ''']=function() {', ls, 'return ', body, '};'].
+  Grammar :n :s ![self at: #gName put: n;
+                       at: #sName put: s]
+          <trans>*:rules                  => [self.gName, '=', self.sName, '.delegated();', (rules join: ''),
+                                              self.gName, '.prototype=', self.gName, ';'].
+
+  locals     ::= {<anything>*:vs}         => ['var ', (vs join: ','), ';']
+               | {}                       => [''].
+  transFn    ::= <trans>:x                => ['(function(){return ', x, '})'].
+}.
+OMetaCompiler2 at: #OMetaParser put: OMetaParser2.
+OMetaCompiler2 compile: code [
+  | tree |
+  tree := self.OMetaParser matchAll: code with: #grammar.
+  code := self match: tree with: #trans.
+  eval value: code.
+  ^ code
+].
+
+
+" A couple of examples "
+
+OMetaCompiler2 compile: 'ometa MMM { ones ::= 1*. }'.
+MMM matchAll: {1. 1. 1. 1} with: #ones.
+
+OMetaCompiler2 compile: '
+  ometa NNN {
+    digit  ::= <super #digit>:d     => [d digitValue].
+    number ::= <number>:n <digit>:d => [n * 10 + d]
+             | <digit>.
+  }
+'.
+NNN matchAll: '1234' with: #number
+
+      </textarea><br>
+      <input type=button value="print it (ctrl+p)" onClick="printIt()">
+      <input type=button value="do it (ctrl+d)" onClick="doIt()">
+      <br><br>
+<!--
+      <b>Translation</b>
+      <input type=button value="show/hide" onClick="this.value = toggleVisible('translation')">
+      <br>
+      <div id=translation style="{display: none}">
+-->
+        <input type=hidden name=translation>
+<!--
+      </div>
+      <b>Transcript</b>
+      <input type=button value="show/hide" onClick="this.value = toggleVisible('transcript')">
+      <br>
+      <div id=transcript style="{display: block}">
+        <textarea cols=132 rows=4 name=transcript></textArea>
+      </div>
+-->
+    </form>
+    <div id=playArea></div>
+<!--
+<b><u>Note</u>:</b> I have tested OMeta/JS on Firefox 2.0.0.9, Safari 3.0.4, and IE 7.0.5730.11.
+Please e-mail me if it doesn't work for you (don't forget to let me know what browser you are using).<br><br>
+<b><u>Known quirks</u>:</b><br>
+<bl>
+  <li>On Safari, ctrl+p and ctrl+d don't work.</li>
+  <li>On IE, ctrl+p works, but also makes a print dialog pop up.
+  <li>On IE, the canvas examples don't work.</li>
+</bl><br>
+-->
+<!--
+<bl>
+  <li>
+-->
+<!--
+  </li>
+</bl>
+To learn more about OMeta, click <a href=..>here</a>.<br>
+-->
+  </body>
+</html>
+
